@@ -9,23 +9,23 @@ import hashlib
 import uuid
 import argparse
 
-def format_time(dt):
+def format_time(dt, timezone=None):
     """Format datetime to German time string"""
     if isinstance(dt, datetime.datetime):
-        # Convert to local timezone
-        local_tz = tzlocal.get_localzone()
+        # Use provided timezone or get local timezone
+        tz = timezone if timezone else tzlocal.get_localzone()
         if dt.tzinfo is None:
             dt = dt.replace(tzinfo=datetime.timezone.utc)
-        local_time = dt.astimezone(local_tz)
+        local_time = dt.astimezone(tz)
         return local_time.strftime("%H:%M")
     return ""
 
-def format_description(event):
+def format_description(event, timezone=None):
     """Format event description with time and location"""
     description_parts = []
     
     # Add time and location
-    start_time = format_time(event.get('DTSTART').dt if event.get('DTSTART') else None)
+    start_time = format_time(event.get('DTSTART').dt if event.get('DTSTART') else None, timezone)
     if start_time:
         location = str(event.get('LOCATION', ''))
         if location:
@@ -64,7 +64,7 @@ def get_event_guid(component, random=False):
     # Calculate SHA1 hash
     return hashlib.sha1(event_str.encode('utf-8')).hexdigest()
 
-def create_rss_feed(random_guid=False, channel_title='Termine', channel_link='https://example.com', channel_description='Terminkalender'):
+def create_rss_feed(random_guid=False, channel_title='Termine', channel_link='https://example.com', channel_description='Terminkalender', timezone=None):
     # Create RSS structure
     rss = ET.Element('rss', version='2.0')
     channel = ET.SubElement(rss, 'channel')
@@ -111,7 +111,7 @@ def create_rss_feed(random_guid=False, channel_title='Termine', channel_link='ht
         ET.SubElement(item, 'title').text = str(component.get('SUMMARY', 'Untitled Event'))
         
         # Description
-        ET.SubElement(item, 'description').text = format_description(component)
+        ET.SubElement(item, 'description').text = format_description(component, timezone)
         
         # Link
         ET.SubElement(item, 'link').text = 'https://example.com'
@@ -139,11 +139,23 @@ if __name__ == "__main__":
     parser.add_argument('--channel-title', default='Termine', help='Title for the RSS channel')
     parser.add_argument('--channel-link', default='https://example.com', help='Link for the RSS channel')
     parser.add_argument('--channel-description', default='Terminkalender', help='Description for the RSS channel')
+    parser.add_argument('--timezone', help='Timezone for event times (e.g. Europe/Berlin). Defaults to system timezone if not specified.')
     args = parser.parse_args()
+    
+    # Convert timezone string to timezone object if provided
+    timezone = None
+    if args.timezone:
+        try:
+            from zoneinfo import ZoneInfo
+            timezone = ZoneInfo(args.timezone)
+        except ImportError:
+            import pytz
+            timezone = pytz.timezone(args.timezone)
     
     print(create_rss_feed(
         random_guid=args.rand_guid,
         channel_title=args.channel_title,
         channel_link=args.channel_link,
-        channel_description=args.channel_description
+        channel_description=args.channel_description,
+        timezone=timezone
     )) 
