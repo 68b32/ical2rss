@@ -64,15 +64,15 @@ def get_event_guid(component, random=False):
     # Calculate SHA1 hash
     return hashlib.sha1(event_str.encode('utf-8')).hexdigest()
 
-def create_rss_feed(random_guid=False):
+def create_rss_feed(random_guid=False, channel_title='Termine', channel_link='https://example.com', channel_description='Terminkalender'):
     # Create RSS structure
     rss = ET.Element('rss', version='2.0')
     channel = ET.SubElement(rss, 'channel')
     
     # Add required channel elements
-    ET.SubElement(channel, 'title').text = 'Termine'
-    ET.SubElement(channel, 'link').text = 'https://example.com'
-    ET.SubElement(channel, 'description').text = 'Terminkalender'
+    ET.SubElement(channel, 'title').text = channel_title
+    ET.SubElement(channel, 'link').text = channel_link
+    ET.SubElement(channel, 'description').text = channel_description
     
     # Read all input
     input_data = sys.stdin.read()
@@ -136,6 +136,14 @@ def create_rss_feed(random_guid=False):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Convert iCal to RSS feed')
     parser.add_argument('--rand-guid', action='store_true', help='Generate random GUIDs instead of content-based hashes')
+    parser.add_argument('--channel-title', default='Termine', help='Title for the RSS channel')
+    parser.add_argument('--channel-link', default='https://example.com', help='Link for the RSS channel')
+    parser.add_argument('--channel-description', default='Terminkalender', help='Description for the RSS channel')
     args = parser.parse_args()
     
-    print(create_rss_feed(random_guid=args.rand_guid)) 
+    print(create_rss_feed(
+        random_guid=args.rand_guid,
+        channel_title=args.channel_title,
+        channel_link=args.channel_link,
+        channel_description=args.channel_description
+    )) 
