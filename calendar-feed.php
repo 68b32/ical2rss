@@ -2,6 +2,57 @@
 
 require('config.php');
 
+function query_plann_calendars($calendars, $hours) {
+    global $config;
+    $all_events = '';
+    
+    foreach ($calendars as $calendar) {
+        // Prepare plann command
+        $plann_cmd = sprintf(
+            '%s --caldav-url %s --caldav-username %s --caldav-password %s --calendar-url %s select --start="now" --end="+%dhours" print-ical',
+            escapeshellarg($config['global']['plann_path']),
+            escapeshellarg($calendar['caldav_url']),
+            escapeshellarg($calendar['caldav_username']),
+            escapeshellarg($calendar['caldav_password']),
+            escapeshellarg($calendar['calendar_url']),
+            $hours
+        );
+        
+        // Execute plann command
+        $descriptorspec = array(
+            0 => array("pipe", "r"),  // stdin
+            1 => array("pipe", "w"),  // stdout
+            2 => array("pipe", "w")   // stderr
+        );
+
+        $plann_process = proc_open($plann_cmd, $descriptorspec, $pipes);
+        if (!is_resource($plann_process)) {
+            http_response_code(500);
+            die('Error: Failed to execute plann command for calendar: ' . $calendar['id']);
+        }
+
+        // Get output and errors
+        $output = stream_get_contents($pipes[1]);
+        $error = stream_get_contents($pipes[2]);
+        
+        // Close pipes
+        fclose($pipes[1]);
+        fclose($pipes[2]);
+
+        // Check return value
+        $return_value = proc_close($plann_process);
+        if ($return_value !== 0) {
+            http_response_code(500);
+            die('Error executing plann for calendar ' . $calendar['id'] . ': ' . $error);
+        }
+
+        $all_events = $output;
+
+    }
+
+    return $all_events;
+}
+
 // Validate input parameters
 if (!isset($_GET['calendar']) || !isset($_GET['hours'])) {
     http_response_code(400);
@@ -62,17 +113,10 @@ if (file_exists($cache_file)) {
     }
 }
 
-// Prepare commands
-$plann_cmd = sprintf(
-    '%s --caldav-url %s --caldav-username %s --caldav-password %s --calendar-url %s select --start="now" --end="+%dhours" print-ical',
-    escapeshellarg($config['global']['plann_path']),
-    escapeshellarg($calendar_config['caldav_url']),
-    escapeshellarg($calendar_config['caldav_username']),
-    escapeshellarg($calendar_config['caldav_password']),
-    escapeshellarg($calendar_config['calendar_url']),
-    $hours
-);
+// Get iCal data from plann
+$ical_data = query_plann_calendars([$calendar_config], $hours);
 
+// Prepare ical2rss command
 $ical2rss_cmd = sprintf(
     '%s --channel-title %s --channel-link %s --channel-description %s --timezone %s',
     escapeshellarg($config['global']['ical2rss_path']),
@@ -82,47 +126,31 @@ $ical2rss_cmd = sprintf(
     escapeshellarg($calendar_config['timezone'])
 );
 
-// Execute commands
+// Execute ical2rss
 $descriptorspec = array(
     0 => array("pipe", "r"),  // stdin
     1 => array("pipe", "w"),  // stdout
     2 => array("pipe", "w")   // stderr
 );
 
-// Start plann process
-$plann_process = proc_open($plann_cmd, $descriptorspec, $plann_pipes);
-if (!is_resource($plann_process)) {
-    http_response_code(500);
-    die('Error: Failed to execute plann command');
-}
-
-// Start ical2rss.py process
-$ical2rss_process = proc_open($ical2rss_cmd, $descriptorspec, $ical2rss_pipes);
+$ical2rss_process = proc_open($ical2rss_cmd, $descriptorspec, $pipes);
 if (!is_resource($ical2rss_process)) {
-    proc_close($plann_process);
     http_response_code(500);
     die('Error: Failed to execute ical2rss.py command');
 }
 
-// Pipe plann output to ical2rss.py
-stream_copy_to_stream($plann_pipes[1], $ical2rss_pipes[0]);
-fclose($plann_pipes[1]);
-fclose($ical2rss_pipes[0]);
+// Feed iCal data to ical2rss
+fwrite($pipes[0], $ical_data);
+fclose($pipes[0]);
 
 // Get output and errors
-$output = stream_get_contents($ical2rss_pipes[1]);
-$plann_error = stream_get_contents($plann_pipes[2]);
-$ical2rss_error = stream_get_contents($ical2rss_pipes[2]);
+$output = stream_get_contents($pipes[1]);
+$ical2rss_error = stream_get_contents($pipes[2]);
 
-// Close processes
-$plann_return = proc_close($plann_process);
+// Close pipes and process
+fclose($pipes[1]);
+fclose($pipes[2]);
 $ical2rss_return = proc_close($ical2rss_process);
-
-// Check for errors
-if ($plann_return !== 0) {
-    http_response_code(500);
-    die('Error executing plann: ' . $plann_error);
-}
 
 if ($ical2rss_return !== 0) {
     http_response_code(500);
