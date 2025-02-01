@@ -6,7 +6,19 @@ function query_plann_calendars($calendars, $hours) {
     global $config;
     $all_events = '';
     
+    // Required parameters for CalDAV access
+    $required_params = ['caldav_url', 'caldav_username', 'caldav_password', 'calendar_url'];
+    
     foreach ($calendars as $calendar) {
+        // Validate required parameters for this calendar
+        foreach ($required_params as $param) {
+            if (empty($calendar[$param])) {
+                http_response_code(500);
+                die(sprintf('Error: Missing required CalDAV parameter "%s" for calendar "%s"', 
+                    $param, $calendar['id']));
+            }
+        }
+        
         // Prepare plann command
         $plann_cmd = sprintf(
             '%s --caldav-url %s --caldav-username %s --caldav-password %s --calendar-url %s select --start="now" --end="+%dhours" print-ical',
@@ -46,10 +58,11 @@ function query_plann_calendars($calendars, $hours) {
             die('Error executing plann for calendar ' . $calendar['id'] . ': ' . $error);
         }
 
-        $all_events = $output;
+        if(!empty($output))
+            $all_events .= "\n\n".$output;
 
     }
-
+    
     return $all_events;
 }
 
@@ -64,16 +77,51 @@ $hours = intval($_GET['hours']);
 
 // Find calendar config by id
 $calendar_config = null;
+$calendars_to_query = [];
+
+// First check for individual calendar
 foreach ($config['calendars'] as $cal) {
     if ($cal['id'] === $calendar_id) {
-        $calendar_config = $cal;
+        $calendar_config = array_merge($config['calendars_defaults'], $cal);
+        $calendars_to_query[] = $calendar_config;
         break;
     }
 }
 
-if ($calendar_config === null) {
+// If no calendar found, check for group
+if (empty($calendars_to_query)) {
+    foreach ($config['groups'] as $group) {
+        if ($group['id'] === $calendar_id) {
+            // Found a group, collect all member calendars
+            foreach ($group['members'] as $member_id) {
+                $member_found = false;
+                foreach ($config['calendars'] as $cal) {
+                    if ($cal['id'] === $member_id) {
+                        $member_found = true;
+                        $calendars_to_query[] = array_merge($config['calendars_defaults'], $cal);
+                        break;
+                    }
+                }
+                if (!$member_found) {
+                    http_response_code(500);
+                    die(sprintf('Error: Calendar "%s" from group "%s" not found', $member_id, $calendar_id));
+                }
+            }
+            
+            // Use group metadata or defaults for the feed
+            $calendar_config = array_merge(
+                $config['calendars_defaults'],
+                array_intersect_key($group, array_flip(['title', 'link', 'description', 'timezone']))
+            );
+            break;
+        }
+    }
+}
+
+// If neither calendar nor group found
+if (empty($calendars_to_query)) {
     http_response_code(404);
-    die('Error: Calendar not found');
+    die('Error: Calendar or group not found');
 }
 
 // Validate hours parameter
@@ -82,12 +130,9 @@ if (!is_numeric($hours) || $hours <= 0 || $hours > $config['global']['max_time_h
     die(sprintf('Error: Hours must be between 1 and %d', $config['global']['max_time_hours']));
 }
 
-// Merge defaults with calendar-specific config
-$calendar_config = array_merge($config['calendars_defaults'], $calendar_config);
 
-// Validate required parameters
-$required_params = ['caldav_url', 'caldav_username', 'caldav_password', 'calendar_url', 
-                   'title', 'link', 'description', 'timezone'];
+
+$required_params = ['title', 'link', 'description', 'timezone'];
 
 foreach ($required_params as $param) {
     if (empty($calendar_config[$param])) {
@@ -114,7 +159,7 @@ if (file_exists($cache_file)) {
 }
 
 // Get iCal data from plann
-$ical_data = query_plann_calendars([$calendar_config], $hours);
+$ical_data = query_plann_calendars($calendars_to_query, $hours);
 
 // Prepare ical2rss command
 $ical2rss_cmd = sprintf(
