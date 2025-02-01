@@ -2,32 +2,6 @@
 
 require('config.php');
 
-// Add this helper function after the require statement
-function serve_cached_with_error($cache_file, $error_message, $config) {
-    $content = file_get_contents($cache_file);
-    
-    // Only add error message if debug key matches
-    if (isset($_GET['debug']) && $_GET['debug'] === $config['global']['debugkey']) {
-        // Insert error comment after the XML declaration
-        $content = preg_replace(
-            '/^(<\?xml[^>]+>\s*)/',
-            '$1<!-- Warning: Using expired cache. Error generating fresh content: ' . htmlspecialchars($error_message) . " -->\n",
-            $content
-        );
-    } else {
-        // Add generic message without error details
-        $content = preg_replace(
-            '/^(<\?xml[^>]+>\s*)/',
-            '$1<!-- Warning: Using expired cache -->\n',
-            $content
-        );
-    }
-    
-    header('Content-Type: application/xml');
-    echo $content;
-    exit;
-}
-
 // Validate input parameters
 if (!isset($_GET['calendar']) || !isset($_GET['hours'])) {
     http_response_code(400);
@@ -78,10 +52,7 @@ $cache_file = sprintf('%s/%s_%dhours.xml',
     $hours
 );
 
-$cache_exists = file_exists($cache_file);
-$cache_expired = false;
-
-if ($cache_exists) {
+if (file_exists($cache_file)) {
     $cache_age = time() - filemtime($cache_file);
     if ($cache_age <= $calendar_config['cachetime']) {
         // Cache is still valid
@@ -89,7 +60,6 @@ if ($cache_exists) {
         readfile($cache_file);
         exit;
     }
-    $cache_expired = true;
 }
 
 // Prepare commands
@@ -122,9 +92,6 @@ $descriptorspec = array(
 // Start plann process
 $plann_process = proc_open($plann_cmd, $descriptorspec, $plann_pipes);
 if (!is_resource($plann_process)) {
-    if ($cache_exists) {
-        serve_cached_with_error($cache_file, 'Failed to execute plann command', $config);
-    }
     http_response_code(500);
     die('Error: Failed to execute plann command');
 }
@@ -133,9 +100,6 @@ if (!is_resource($plann_process)) {
 $ical2rss_process = proc_open($ical2rss_cmd, $descriptorspec, $ical2rss_pipes);
 if (!is_resource($ical2rss_process)) {
     proc_close($plann_process);
-    if ($cache_exists) {
-        serve_cached_with_error($cache_file, 'Failed to execute ical2rss.py command', $config);
-    }
     http_response_code(500);
     die('Error: Failed to execute ical2rss.py command');
 }
@@ -156,42 +120,22 @@ $ical2rss_return = proc_close($ical2rss_process);
 
 // Check for errors
 if ($plann_return !== 0) {
-    if ($cache_exists) {
-        serve_cached_with_error($cache_file, 'Error executing plann: ' . $plann_error, $config);
-    }
     http_response_code(500);
     die('Error executing plann: ' . $plann_error);
 }
 
 if ($ical2rss_return !== 0) {
-    if ($cache_exists) {
-        serve_cached_with_error($cache_file, 'Error executing ical2rss.py: ' . $ical2rss_error, $config);
-    }
     http_response_code(500);
     die('Error executing ical2rss.py: ' . $ical2rss_error);
 }
 
 // Validate XML
-$prev_use_errors = libxml_use_internal_errors(true);
+libxml_use_internal_errors(true);
 $xml = simplexml_load_string($output);
 if ($xml === false) {
-    if ($cache_exists) {
-        $xml_errors = libxml_get_errors();
-        $error_msg = 'Invalid XML output generated: ';
-        foreach ($xml_errors as $error) {
-            $error_msg .= sprintf("[Line %d] %s", $error->line, $error->message);
-        }
-        libxml_clear_errors();
-        libxml_use_internal_errors($prev_use_errors);
-        serve_cached_with_error($cache_file, $error_msg, $config);
-    }
-    $xml_errors = libxml_get_errors();
-    libxml_clear_errors();
-    libxml_use_internal_errors($prev_use_errors);
     http_response_code(500);
     die('Error: Invalid XML output generated');
 }
-libxml_use_internal_errors($prev_use_errors);
 
 // Cache the result
 if (!file_exists($config['global']['cachedir'])) {
