@@ -113,9 +113,6 @@ def create_rss_feed(random_guid=False, channel_title='Termine', channel_link='ht
         # Description
         ET.SubElement(item, 'description').text = format_description(component, timezone)
         
-        # Link
-        ET.SubElement(item, 'link').text = 'https://example.com'
-        
         # GUID
         ET.SubElement(item, 'guid', isPermaLink='false').text = get_event_guid(component, random_guid)
         
