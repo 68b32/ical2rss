@@ -1,0 +1,49 @@
+{
+    "global": {
+        "plann_path": "/usr/local/bin/plann",
+        "ical2rss_path": "/usr/local/bin/ical2rss.py",
+        "cachedir": "/tmp/calendar-feed-cache",
+        "max_time_hours": 168
+    },
+    "calendars_defaults": {
+        "cachetime": 300,
+        "title": "Default Calendar",
+        "link": "https://example.com/calendar",
+        "description": "Default calendar description",
+        "timezone": "UTC"
+    },
+    "calendars": [
+        {
+            "id": "personal",
+            "title": "Personal Calendar",
+            "link": "https://example.com/personal",
+            "description": "My personal calendar events",
+            "timezone": "America/New_York",
+            "caldav_url": "https://caldav.example.com",
+            "caldav_username": "username",
+            "caldav_password": "password",
+            "calendar_url": "https://caldav.example.com/calendars/user/personal/"
+        },
+        {
+            "id": "work",
+            "title": "Work Calendar",
+            "link": "https://example.com/work",
+            "description": "Work-related events",
+            "timezone": "America/New_York",
+            "caldav_url": "https://caldav.company.com",
+            "caldav_username": "work_username",
+            "caldav_password": "work_password",
+            "calendar_url": "https://caldav.company.com/calendars/user/work/"
+        }
+    ],
+    "groups": [
+        {
+            "id": "all",
+            "title": "All Calendars",
+            "link": "https://example.com/all",
+            "description": "Combined view of all calendars",
+            "timezone": "America/New_York",
+            "members": ["personal", "work"]
+        }
+    ]
+}

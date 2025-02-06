@@ -1,6 +1,23 @@
 <?php
 
-require('config.php');
+// Load and validate configuration
+$config_file = __DIR__ . '/config.json';
+if (!file_exists($config_file)) {
+    http_response_code(500);
+    die('Error: Configuration file not found');
+}
+
+$config_json = file_get_contents($config_file);
+if ($config_json === false) {
+    http_response_code(500);
+    die('Error: Could not read configuration file');
+}
+
+$config = json_decode($config_json, true);
+if ($config === null) {
+    http_response_code(500);
+    die('Error: Invalid JSON in configuration file');
+}
 
 function query_plann_calendars($calendars, $hours) {
     global $config;
